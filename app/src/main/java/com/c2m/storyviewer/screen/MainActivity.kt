@@ -4,7 +4,6 @@ import android.animation.Animator
 import android.animation.ValueAnimator
 import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import android.util.SparseIntArray
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -14,14 +13,13 @@ import com.c2m.storyviewer.R
 import com.c2m.storyviewer.app.StoryApp
 import com.c2m.storyviewer.customview.StoryPagerAdapter
 import com.c2m.storyviewer.data.StoryUser
+import com.c2m.storyviewer.databinding.ActivityMainBinding
 import com.c2m.storyviewer.utils.CubeOutTransformer
 import com.c2m.storyviewer.utils.StoryGenerator
 import com.google.android.exoplayer2.upstream.DataSource
 import com.google.android.exoplayer2.upstream.DataSpec
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory
-import com.google.android.exoplayer2.upstream.cache.CacheUtil
 import com.google.android.exoplayer2.util.Util
-import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.async
 
@@ -30,15 +28,16 @@ class MainActivity : AppCompatActivity(),
 
     private lateinit var pagerAdapter: StoryPagerAdapter
     private var currentPage: Int = 0
-
+    private var binding: ActivityMainBinding? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding!!.root)
         setUpPager()
     }
 
     override fun backPageView() {
-        if (viewPager.currentItem > 0) {
+        if (binding!!.viewPager.currentItem > 0) {
             try {
                 fakeDrag(false)
             } catch (e: Exception) {
@@ -48,7 +47,7 @@ class MainActivity : AppCompatActivity(),
     }
 
     override fun nextPageView() {
-        if (viewPager.currentItem + 1 < viewPager.adapter?.count ?: 0) {
+        if (binding!!.viewPager.currentItem + 1 < (binding!!.viewPager.adapter?.count ?: 0)) {
             try {
                 fakeDrag(true)
             } catch (e: Exception) {
@@ -60,6 +59,7 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
+
     private fun setUpPager() {
         val storyUserList = StoryGenerator.generateStories()
         preLoadStories(storyUserList)
@@ -68,13 +68,13 @@ class MainActivity : AppCompatActivity(),
             supportFragmentManager,
             storyUserList
         )
-        viewPager.adapter = pagerAdapter
-        viewPager.currentItem = currentPage
-        viewPager.setPageTransformer(
+        binding!!.viewPager.adapter = pagerAdapter
+        binding!!.viewPager.currentItem = currentPage
+        binding!!.viewPager.setPageTransformer(
             true,
             CubeOutTransformer()
         )
-        viewPager.addOnPageChangeListener(object : PageChangeListener() {
+        binding!!.viewPager.addOnPageChangeListener(object : PageChangeListener() {
             override fun onPageSelected(position: Int) {
                 super.onPageSelected(position)
                 currentPage = position
@@ -114,22 +114,22 @@ class MainActivity : AppCompatActivity(),
                         Util.getUserAgent(applicationContext, getString(R.string.app_name))
                     ).createDataSource()
 
-                val listener =
-                    CacheUtil.ProgressListener { requestLength: Long, bytesCached: Long, _: Long ->
-                        val downloadPercentage = (bytesCached * 100.0
-                                / requestLength)
-                        Log.d("preLoadVideos", "downloadPercentage: $downloadPercentage")
-                    }
+//                val listener =
+//                    CacheUtil.ProgressListener { requestLength: Long, bytesCached: Long, _: Long ->
+//                        val downloadPercentage = (bytesCached * 100.0
+//                                / requestLength)
+//                        Log.d("preLoadVideos", "downloadPercentage: $downloadPercentage")
+//                    }
 
                 try {
-                    CacheUtil.cache(
-                        dataSpec,
-                        StoryApp.simpleCache,
-                        CacheUtil.DEFAULT_CACHE_KEY_FACTORY,
-                        dataSource,
-                        listener,
-                        null
-                    )
+//                    CacheUtil.cache(
+//                        dataSpec,
+//                        StoryApp.simpleCache,
+//                        CacheUtil.DEFAULT_CACHE_KEY_FACTORY,
+//                        dataSource,
+//                        listener,
+//                        null
+//                    )
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -143,8 +143,8 @@ class MainActivity : AppCompatActivity(),
         }
     }
 
-    private fun currentFragment(): StoryDisplayFragment? {
-        return pagerAdapter.findFragmentByPosition(viewPager, currentPage) as StoryDisplayFragment
+    private fun currentFragment(): StoryDisplayFragment {
+        return pagerAdapter.findFragmentByPosition(binding!!.viewPager, currentPage) as StoryDisplayFragment
     }
 
     /**
@@ -156,38 +156,41 @@ class MainActivity : AppCompatActivity(),
     private var prevDragPosition = 0
 
     private fun fakeDrag(forward: Boolean) {
-        if (prevDragPosition == 0 && viewPager.beginFakeDrag()) {
-            ValueAnimator.ofInt(0, viewPager.width).apply {
+        if (prevDragPosition == 0 && binding!!.viewPager.beginFakeDrag()) {
+            ValueAnimator.ofInt(0, binding!!.viewPager.width).apply {
                 duration = 400L
                 interpolator = FastOutSlowInInterpolator()
                 addListener(object : Animator.AnimatorListener {
-                    override fun onAnimationRepeat(p0: Animator?) {}
+                    override fun onAnimationRepeat(p0: Animator) {}
 
-                    override fun onAnimationEnd(animation: Animator?) {
+                    override fun onAnimationEnd(animation: Animator) {
                         removeAllUpdateListeners()
-                        if (viewPager.isFakeDragging) {
-                            viewPager.endFakeDrag()
+                        if (binding!!.viewPager.isFakeDragging) {
+                            binding!!.viewPager.endFakeDrag()
                         }
                         prevDragPosition = 0
                     }
 
-                    override fun onAnimationCancel(animation: Animator?) {
+                    override fun onAnimationCancel(animation: Animator) {
                         removeAllUpdateListeners()
-                        if (viewPager.isFakeDragging) {
-                            viewPager.endFakeDrag()
+                        if (binding!!.viewPager.isFakeDragging) {
+                            binding!!.viewPager.endFakeDrag()
                         }
                         prevDragPosition = 0
                     }
 
-                    override fun onAnimationStart(p0: Animator?) {}
+                    override fun onAnimationStart(p0: Animator) {
+
+                    }
+
                 })
                 addUpdateListener {
-                    if (!viewPager.isFakeDragging) return@addUpdateListener
+                    if (!binding!!.viewPager.isFakeDragging) return@addUpdateListener
                     val dragPosition: Int = it.animatedValue as Int
                     val dragOffset: Float =
                         ((dragPosition - prevDragPosition) * if (forward) -1 else 1).toFloat()
                     prevDragPosition = dragPosition
-                    viewPager.fakeDragBy(dragOffset)
+                    binding!!.viewPager.fakeDragBy(dragOffset)
                 }
             }.start()
         }

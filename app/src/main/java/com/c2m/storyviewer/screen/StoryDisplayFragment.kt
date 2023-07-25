@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
-import android.text.format.DateFormat
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -13,24 +12,29 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.bumptech.glide.Glide
 import com.c2m.storyviewer.R
-import com.c2m.storyviewer.app.StoryApp
+import com.c2m.storyviewer.app.StoryApp.Companion.simpleCache
 import com.c2m.storyviewer.customview.StoriesProgressView
 import com.c2m.storyviewer.data.Story
 import com.c2m.storyviewer.data.StoryUser
+import com.c2m.storyviewer.databinding.FragmentStoryDisplayBinding
+import com.c2m.storyviewer.screen.MainActivity.Companion.progressState
 import com.c2m.storyviewer.utils.OnSwipeTouchListener
 import com.c2m.storyviewer.utils.hide
 import com.c2m.storyviewer.utils.show
-import com.google.android.exoplayer2.ExoPlaybackException
-import com.google.android.exoplayer2.ExoPlayerFactory
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.PlaybackException
 import com.google.android.exoplayer2.Player
-import com.google.android.exoplayer2.SimpleExoPlayer
 import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import com.google.android.exoplayer2.upstream.DataSource
-import com.google.android.exoplayer2.upstream.DefaultHttpDataSourceFactory
-import com.google.android.exoplayer2.upstream.cache.CacheDataSourceFactory
+import com.google.android.exoplayer2.upstream.DefaultDataSource
+import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory
+import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
+import com.google.android.exoplayer2.upstream.cache.CacheDataSource
+import com.google.android.exoplayer2.upstream.cache.LeastRecentlyUsedCacheEvictor
+import com.google.android.exoplayer2.upstream.cache.SimpleCache
 import com.google.android.exoplayer2.util.Util
-import kotlinx.android.synthetic.main.fragment_story_display.*
-import java.util.*
+import java.util.Calendar
+import java.util.Locale
 
 class StoryDisplayFragment : Fragment(),
     StoriesProgressView.StoriesListener {
@@ -38,17 +42,18 @@ class StoryDisplayFragment : Fragment(),
     private val position: Int by
     lazy { arguments?.getInt(EXTRA_POSITION) ?: 0 }
 
-    private val storyUser: StoryUser by
-    lazy {
-        (arguments?.getParcelable<StoryUser>(
-            EXTRA_STORY_USER
-        ) as StoryUser)
-    }
+    private var binding: FragmentStoryDisplayBinding? = null
 
-    private val stories: ArrayList<Story> by
-    lazy { storyUser.stories }
+    private var storyUser: StoryUser =
+        arguments?.getParcelable(EXTRA_STORY_USER) as? StoryUser ?: StoryUser(
+            "", "",
+            arrayListOf()
+        )
 
-    private var simpleExoPlayer: SimpleExoPlayer? = null
+    private var stories: ArrayList<Story> = storyUser.stories
+
+
+    private var simpleExoPlayer: ExoPlayer? = null
     private lateinit var mediaDataSourceFactory: DataSource.Factory
     private var pageViewOperator: PageViewOperator? = null
     private var counter = 0
@@ -61,13 +66,28 @@ class StoryDisplayFragment : Fragment(),
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
-    ): View? {
-        return inflater.inflate(R.layout.fragment_story_display, container, false)
+    ): View {
+        binding = FragmentStoryDisplayBinding.inflate(inflater, container, false)
+        return binding!!.root
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        binding = null
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        storyDisplayVideo.useController = false
+        binding?.storyDisplayVideo?.useController = false
+
+
+
+        storyUser = arguments?.getParcelable(EXTRA_STORY_USER) as? StoryUser ?: StoryUser(
+            "", "",
+            arrayListOf()
+        )
+        stories = storyUser.stories
+
         updateStory()
         setUpUi()
     }
@@ -93,18 +113,17 @@ class StoryDisplayFragment : Fragment(),
         simpleExoPlayer?.seekTo(5)
         simpleExoPlayer?.playWhenReady = true
         if (counter == 0) {
-            storiesProgressView?.startStories()
+            binding!!.storiesProgressView.startStories()
         } else {
-            // restart animation
-            counter = MainActivity.progressState.get(arguments?.getInt(EXTRA_POSITION) ?: 0)
-            storiesProgressView?.startStories(counter)
+            counter = progressState.get(arguments?.getInt(EXTRA_POSITION) ?: 0)
+            binding!!.storiesProgressView.startStories(counter)
         }
     }
 
     override fun onPause() {
         super.onPause()
         simpleExoPlayer?.playWhenReady = false
-        storiesProgressView?.abandon()
+        binding!!.storiesProgressView.abandon()
     }
 
     override fun onComplete() {
@@ -120,7 +139,7 @@ class StoryDisplayFragment : Fragment(),
     }
 
     override fun onNext() {
-        if (stories.size <= counter + 1) {
+        if (stories!!.size <= counter + 1) {
             return
         }
         ++counter
@@ -136,41 +155,47 @@ class StoryDisplayFragment : Fragment(),
     private fun updateStory() {
         simpleExoPlayer?.stop()
         if (stories[counter].isVideo()) {
-            storyDisplayVideo.show()
-            storyDisplayImage.hide()
-            storyDisplayVideoProgress.show()
+            binding?.storyDisplayVideo?.show()
+            binding?.storyDisplayImage?.hide()
+            binding?.storyDisplayVideoProgress?.show()
             initializePlayer()
         } else {
-            storyDisplayVideo.hide()
-            storyDisplayVideoProgress.hide()
-            storyDisplayImage.show()
-            Glide.with(this).load(stories[counter].url).into(storyDisplayImage)
+            binding?.storyDisplayVideo?.hide()
+            binding?.storyDisplayVideoProgress?.hide()
+            binding?.storyDisplayImage?.show()
+            binding?.storyDisplayImage?.let { Glide.with(this).load(stories[counter].url).into(it) }
         }
 
         val cal: Calendar = Calendar.getInstance(Locale.ENGLISH).apply {
             timeInMillis = stories[counter].storyDate
         }
-        storyDisplayTime.text = DateFormat.format("MM-dd-yyyy HH:mm:ss", cal).toString()
+        binding?.storyDisplayTime!!.text =
+            android.text.format.DateFormat.format("MM-dd-yyyy HH:mm:ss", cal).toString()
     }
 
     private fun initializePlayer() {
         if (simpleExoPlayer == null) {
-            simpleExoPlayer = ExoPlayerFactory.newSimpleInstance(requireContext())
+
+            simpleExoPlayer = ExoPlayer.Builder(requireContext()).build()
         } else {
             simpleExoPlayer?.release()
             simpleExoPlayer = null
-            simpleExoPlayer = ExoPlayerFactory.newSimpleInstance(requireContext())
+            simpleExoPlayer = ExoPlayer.Builder(requireContext()).build()
         }
 
-        mediaDataSourceFactory = CacheDataSourceFactory(
-            StoryApp.simpleCache,
-            DefaultHttpDataSourceFactory(
-                Util.getUserAgent(
-                    context,
-                    Util.getUserAgent(requireContext(), getString(R.string.app_name))
-                )
-            )
-        )
+
+//        val userAgent =
+//            Util.getUserAgent(requireContext(), requireContext().getString(R.string.app_name))
+//        val cache = SimpleCache(
+//            requireContext().cacheDir,
+//            LeastRecentlyUsedCacheEvictor(100 * 1024 * 1024) // 100 MB cache
+//        )
+//
+//        val httpDataSourceFactory = DefaultHttpDataSource.Factory().setUserAgent(userAgent)
+//        CacheDataSource.Factory().setCache(cache)
+        //mediaDataSourceFactory = CacheDataSource.Factory().setCache(cache).setUpstreamDataSourceFactory(httpDataSourceFactory)
+
+        mediaDataSourceFactory  = DefaultDataSource.Factory(requireContext())
         val mediaSource = ProgressiveMediaSource.Factory(mediaDataSourceFactory).createMediaSource(
             Uri.parse(stories[counter].url)
         )
@@ -179,29 +204,30 @@ class StoryDisplayFragment : Fragment(),
             simpleExoPlayer?.playWhenReady = true
         }
 
-        storyDisplayVideo.setShutterBackgroundColor(Color.BLACK)
-        storyDisplayVideo.player = simpleExoPlayer
+        binding?.storyDisplayVideo?.setShutterBackgroundColor(Color.BLACK)
+        binding?.storyDisplayVideo?.player = simpleExoPlayer
 
         simpleExoPlayer?.addListener(object : Player.EventListener {
-            override fun onPlayerError(error: ExoPlaybackException?) {
+            override fun onPlayerError(error: PlaybackException) {
                 super.onPlayerError(error)
-                storyDisplayVideoProgress.hide()
+                binding?.storyDisplayVideoProgress?.hide()
                 if (counter == stories.size.minus(1)) {
                     pageViewOperator?.nextPageView()
                 } else {
-                    storiesProgressView?.skip()
+                    binding?.storiesProgressView?.skip()
                 }
             }
+
 
             override fun onLoadingChanged(isLoading: Boolean) {
                 super.onLoadingChanged(isLoading)
                 if (isLoading) {
-                    storyDisplayVideoProgress.show()
+                    binding?.storyDisplayVideoProgress?.show()
                     pressTime = System.currentTimeMillis()
                     pauseCurrentStory()
                 } else {
-                    storyDisplayVideoProgress.hide()
-                    storiesProgressView?.getProgressWithIndex(counter)
+                    binding?.storyDisplayVideoProgress!!.hide()
+                    binding?.storiesProgressView?.getProgressWithIndex(counter)
                         ?.setDuration(simpleExoPlayer?.duration ?: 8000L)
                     onVideoPrepared = true
                     resumeCurrentStory()
@@ -211,29 +237,30 @@ class StoryDisplayFragment : Fragment(),
     }
 
     private fun setUpUi() {
-        val touchListener = object : OnSwipeTouchListener(activity!!) {
+        val touchListener = object : OnSwipeTouchListener(requireActivity()) {
             override fun onSwipeTop() {
-                Toast.makeText(activity, "onSwipeTop", Toast.LENGTH_LONG).show()
+                Toast.makeText(requireActivity(), "onSwipeTop", Toast.LENGTH_LONG).show()
             }
 
             override fun onSwipeBottom() {
-                Toast.makeText(activity, "onSwipeBottom", Toast.LENGTH_LONG).show()
+                Toast.makeText(requireActivity(), "onSwipeBottom", Toast.LENGTH_LONG).show()
             }
 
             override fun onClick(view: View) {
                 when (view) {
-                    next -> {
-                        if (counter == stories.size - 1) {
+                    binding?.next -> {
+                        if (counter == stories!!.size - 1) {
                             pageViewOperator?.nextPageView()
                         } else {
-                            storiesProgressView?.skip()
+                            binding!!.storiesProgressView.skip()
                         }
                     }
-                    previous -> {
+
+                    binding?.previous -> {
                         if (counter == 0) {
                             pageViewOperator?.backPageView()
                         } else {
-                            storiesProgressView?.reverse()
+                            binding!!.storiesProgressView.reverse()
                         }
                     }
                 }
@@ -251,6 +278,7 @@ class StoryDisplayFragment : Fragment(),
                         pauseCurrentStory()
                         return false
                     }
+
                     MotionEvent.ACTION_UP -> {
                         showStoryOverlay()
                         resumeCurrentStory()
@@ -260,55 +288,58 @@ class StoryDisplayFragment : Fragment(),
                 return false
             }
         }
-        previous.setOnTouchListener(touchListener)
-        next.setOnTouchListener(touchListener)
+        binding!!.previous.setOnTouchListener(touchListener)
+        binding!!.next.setOnTouchListener(touchListener)
 
-        storiesProgressView?.setStoriesCountDebug(
-            stories.size, position = arguments?.getInt(EXTRA_POSITION) ?: -1
-        )
-        storiesProgressView?.setAllStoryDuration(4000L)
-        storiesProgressView?.setStoriesListener(this)
+        stories?.let {
+            binding!!.storiesProgressView.setStoriesCountDebug(
+                it.size, position = arguments?.getInt(EXTRA_POSITION) ?: -1
+            )
+        }
+        binding!!.storiesProgressView.setAllStoryDuration(4000L)
+        binding!!.storiesProgressView.setStoriesListener(this)
 
-        Glide.with(this).load(storyUser.profilePicUrl).circleCrop().into(storyDisplayProfilePicture)
-        storyDisplayNick.text = storyUser.username
+        Glide.with(this).load(storyUser?.profilePicUrl).circleCrop()
+            .into(binding!!.storyDisplayProfilePicture)
+        binding!!.storyDisplayNick.text = storyUser?.username ?: ""
     }
 
-    private fun showStoryOverlay() {
-        if (storyOverlay == null || storyOverlay.alpha != 0F) return
+    fun showStoryOverlay() {
+        if (binding!!.storyOverlay.alpha != 0F) return
 
-        storyOverlay.animate()
+        binding!!.storyOverlay.animate()
             .setDuration(100)
             .alpha(1F)
             .start()
     }
 
-    private fun hideStoryOverlay() {
-        if (storyOverlay == null || storyOverlay.alpha != 1F) return
+    fun hideStoryOverlay() {
+        if (binding!!.storyOverlay.alpha != 1F) return
 
-        storyOverlay.animate()
+        binding!!.storyOverlay.animate()
             .setDuration(200)
             .alpha(0F)
             .start()
     }
 
-    private fun savePosition(pos: Int) {
-        MainActivity.progressState.put(position, pos)
+    fun savePosition(pos: Int) {
+        progressState.put(position, pos)
     }
 
-    private fun restorePosition(): Int {
-        return MainActivity.progressState.get(position)
+    fun restorePosition(): Int {
+        return progressState.get(position)
     }
 
     fun pauseCurrentStory() {
         simpleExoPlayer?.playWhenReady = false
-        storiesProgressView?.pause()
+        binding?.storiesProgressView?.pause()
     }
 
     fun resumeCurrentStory() {
         if (onResumeCalled) {
             simpleExoPlayer?.playWhenReady = true
             showStoryOverlay()
-            storiesProgressView?.resume()
+            binding?.storiesProgressView?.resume()
         }
     }
 
